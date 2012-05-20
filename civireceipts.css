@@ -1,0 +1,24 @@
+div { margin: 20px 0; }
+body, td, th { font-size: 12px; }
+h1 { font-size: 18px; }
+div#receipt {
+  text-shadow: 0.05em 0.05em #333;
+  font-size: 26px;
+}
+div#thankyou {
+  font-size: 35px;
+  height:50px;
+  padding: 0 0 0 500px;
+  font-style:italic;
+}
+div#company, div#recipient {
+  margin-left: 30px;
+  border:1px solid blue; 
+  width:300px;
+  padding:5px;
+}
+td.amount { text-align:right;}
+div#YTD { text-align:right;}
+div#AddrChange { padding-left: 400px; }
+div#IRS { text-align:center; }
+

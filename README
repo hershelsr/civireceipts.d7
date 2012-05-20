@@ -1,0 +1,21 @@
+This module comes with no warranty whatsoever.
+
+This module requires CiviCRM 4 and Drupal 7
+
+To use:
+
+1. Put the files on sites/all/modules so that you have a folder called 
+   sites/all/modules/civireceipts
+
+2. Enable the module
+
+3. Visit admin/config/civireceipts to set your settings
+
+4. Visit civicrm/civireceipts to search and generate receipts. They will not 
+   look great on screen because the page break only works when you print. 
+   Use Print Preview. :)
+
+5. The template file .tpl.php and the CSS file .css are what you can easily 
+   edit, if you has knowledge of HTML and CSS. The template file has PHP 
+   also but it's all encapsulated in blocks and so it should be easy to 
+   edit the rest of it. 

@@ -1,0 +1,6 @@
+name = "Civi Receipts"
+description = "Civi Receipts"
+
+core = 7.x
+dependencies[] = civicrm
+

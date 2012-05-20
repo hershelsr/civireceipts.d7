@@ -1,0 +1,233 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ */
+function civireceipts_menu(){
+  $items['civicrm/civireceipts'] = array(
+    'title' => t('Civi Receipts'),
+    'type' => MENU_NORMAL_ITEM,
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('civireceipts_form'),
+    'access arguments' => array('access civireceipts'),
+  );
+  $items['admin/config/civireceipts'] = array(
+    'title' => t('Civi Receipts Settings'),
+    'type' => MENU_NORMAL_ITEM,
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('civireceipts_settings_form'),
+    'access arguments' => array('administer site configuration'),
+  );
+  return $items;
+}
+
+function civireceipts_permission() {
+  return array(
+    'access civireceipts' => array(
+      'title' => t('access civireceipts'),
+      'restrict access' => TRUE,
+    ),
+  );
+}
+function civireceipts_theme($existing, $type, $theme, $path){
+  return array(
+    'civireceipts' => array(
+      'variables' => array('data'),
+      'template'  => 'civireceipts', 
+    )
+  );
+}
+function civireceipts_form($form, &$form_state) {
+  $form = array();
+  // Initialize.
+  if (!$form_state['rebuild']) {
+    $form_state['input'] = array();
+  }
+  $form['searchparams'] = array(
+    '#type' => 'fieldset',
+    '#title' => 'Search Parameters',
+  );
+  $form['searchparams']['begin_date'] = array(
+    '#type' => 'date',
+    '#title' => 'Begin Date',
+    '#default_value' => $form_state['input']['begin_date'],
+  );
+  $form['searchparams']['end_date'] = array(
+    '#type' => 'date',
+    '#title' => 'End Date',
+    '#default_value' => $form_state['input']['end_date'],
+  );
+  $form['searchparams'][] = array(
+    '#type' => 'submit',
+    '#value' => 'Search',
+  );
+  if (isset($form_state['storage']['table'])) {
+    $form['table'] = array(
+      '#markup' => $form_state['storage']['table'],
+    );
+    $form['Generate'] = array(
+      '#type' => 'submit',
+      '#value' => 'Generate',
+    );
+  }
+  // TODO Please change this theme call to use an associative array for the $variables parameter.
+  $form['pager'] = array(
+      '#theme' => 'pager',
+  );
+  return $form;
+}
+function civireceipts_form_submit($form, &$form_state) {
+  if (!module_exists('civicrm')) {
+    return FALSE;
+  }
+  civicrm_initialize(TRUE);
+  require_once 'CRM/Core/DAO.php';
+  if (isset($form_state['values']['begin_date'])) {
+    $begin_date = $form_state['values']['begin_date']['year'] . '-' .
+    $form_state['values']['begin_date']['month'] . '-' .
+    $form_state['values']['begin_date']['day'];
+    $end_date = $form_state['values']['end_date']['year'] . '-' .
+    $form_state['values']['end_date']['month'] . '-' .
+    $form_state['values']['end_date']['day'];
+  }
+  else {
+    $begin_date = 'NOW()';
+    $end_date = 'NOW()';
+  }
+  if ('Generate' == $form_state['values']['op']) {
+    return civireceipts_form_generate($form, $form_state, $begin_date, $end_date);
+  }
+  else {
+    return civireceipts_form_search($form, $form_state, $begin_date, $end_date);
+  }
+}
+function civireceipts_form_generate($form, &$form_state, $begin_date, $end_date) {
+  require_once('CRM/Core/PseudoConstant.php');
+  $states = CRM_Core_PseudoConstant::stateProvince();
+  $countries = CRM_Core_PseudoConstant::country();
+  // Loop through all checked boxes and make a receipt page for each
+  foreach($_POST as $k => $v) {
+    $t = split('_',$k);
+    if ('generate' == $t[0]) {
+      $data->pages[] = civireceipts_form_generate_page(
+                         $t[1], 
+                         $begin_date,
+                         $end_date,
+                         $states,
+                         $countries,
+                         $form_state['values']['end_date']['year']
+                       );
+    }
+  }
+  $data->css = base_path() . drupal_get_path('module','civireceipts') . '/civireceipts.css';
+  echo theme('civireceipts',array('data'=>$data));die;
+}
+function civireceipts_form_generate_page($cid, $begin_date, $end_date, $states, $countries, $endyear) {
+  // Get all contributions relevant to this period
+  $sql = "SELECT contact_id,display_name,total_amount, 
+                 DATE_FORMAT(receive_date,'%b %d, %Y') as gift_date
+          FROM civicrm_contribution ccontr
+          LEFT JOIN civicrm_contact cc ON cc.id = ccontr.contact_id
+          LEFT JOIN civicrm_value_ministry_projects_3 cvmp ON cvmp.entity_id = ccontr.id
+          WHERE receive_date BETWEEN '$begin_date 00:00:00' AND '$end_date 23:59:59'
+          AND contact_id = {$cid}";
+  $dao = & CRM_Core_DAO::executeQuery($sql);
+  while($dao->fetch()) {
+    $contribs[] = array(
+                    'total_amount' => $dao->total_amount,
+                    'receive_date' => $dao->gift_date,
+                  );
+  }
+  $page->contribs = $contribs;
+  $page->display_name = $dao->display_name;
+  // Get Year To Date amount
+  $sql = "SELECT SUM(total_amount) as YTD 
+          FROM civicrm_contribution ccontr
+          WHERE receive_date BETWEEN '$endyear-01-01 00:00:00' AND '$end_date 23:59:59'
+          AND contact_id = {$cid}";
+  $dao = & CRM_Core_DAO::executeQuery($sql);
+  $dao->fetch();
+  $page->YTD = $dao->YTD;
+  // Get address
+  $results = civicrm_api("Address","get", array(
+                                            'version' => 3,
+                                            'contact_id' => $cid,
+                                            'is_primary' => 1
+                                          ));
+  $results['values'][$results['id']]['state'] = $states[$results['values'][$results['id']]['state_province_id']];
+  $results['values'][$results['id']]['country'] = $countries[$results['values'][$results['id']]['country_id']];
+  $page->address = $results['values'][$results['id']];
+  $company = array(
+               'civireceipts_company_name' => variable_get('civireceipts_company_name', ''),
+               'civireceipts_company_address' => variable_get('civireceipts_company_address', ''),
+               'civireceipts_company_tel' => variable_get('civireceipts_company_tel', ''),
+               'civireceipts_company_fax' => variable_get('civireceipts_company_fax', ''),
+               'civireceipts_company_email' => variable_get('civireceipts_company_email', ''),
+               'civireceipts_irs_info' => variable_get('civireceipts_irs_info', ''),
+             );
+  $page->company = $company;
+  return $page;
+}
+function civireceipts_form_search($form, &$form_state, $begin_date, $end_date) {
+  $form_state['rebuild'] = TRUE;
+  $sql = "SELECT contact_id,display_name
+          FROM civicrm_contribution ccontr
+          LEFT JOIN civicrm_contact cc ON cc.id = ccontr.contact_id
+          WHERE receive_date BETWEEN '$begin_date 00:00:00' AND '$end_date 23:59:59'
+          GROUP BY contact_id
+          ORDER BY display_name";
+  $dao = & CRM_Core_DAO::executeQuery($sql);
+  while($dao->fetch()) {
+    $l = l($dao->display_name,'civicrm/contact/view',array('query' => array('cid' => $dao->contact_id)));
+    $r = theme('checkbox',array('element' => array('#value' => 1, 
+                                                   '#attributes' => array('name' => 'generate_' . $dao->contact_id))));
+    $rows[] = array($l,$r);
+  }
+  // Store values that will be available when we return to the definition.
+  $headers = array('Name', 'Generate');
+  $page_header = "<h2>Contributors between $begin_date and $end_date:</h2>";
+  $form_state['storage']['table'] = $page_header .
+                                    theme('table', array('header' => $headers, 'rows' => $rows));
+}
+
+/**
+ * Form builder function for module settings.
+ */
+function civireceipts_settings_form() {
+  $form['company'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Company Details'),
+  );
+  $form['company']['civireceipts_company_name'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Name'),
+    '#default_value' => variable_get('civireceipts_company_name', ''),
+  );
+  $form['company']['civireceipts_company_address'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Address'),
+    '#default_value' => variable_get('civireceipts_company_address', ''),
+  );
+  $form['company']['civireceipts_company_tel'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Telephone'),
+    '#default_value' => variable_get('civireceipts_company_tel', ''),
+  );
+  $form['company']['civireceipts_company_fax'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Fax'),
+    '#default_value' => variable_get('civireceipts_company_fax', ''),
+  );
+  $form['company']['civireceipts_company_email'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Email'),
+    '#default_value' => variable_get('civireceipts_company_email', ''),
+  );
+  $form['company']['civireceipts_irs_info'] = array(
+    '#type' => 'textarea',
+    '#title' => t('IRS Information'),
+    '#default_value' => variable_get('civireceipts_irs_info', ''),
+  );
+  return system_settings_form($form);
+}
+
